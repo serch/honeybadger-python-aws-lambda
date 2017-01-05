@@ -65,14 +65,14 @@ class Honeybadger(object):
         if context is None:
             context = {}
 
-        payload = self.create_payload(exception, context)
-        self.send_notice(payload)
+        payload = self.__hb__create_payload(exception, context)
+        self.__hb__send_notice(payload)
 
-    def create_payload(self, exception, context):
+    def __hb__create_payload(self, exception, context):
         # sys.exc_info returns info about the about the exception that is currently being handled (if any)
         exc_traceback = sys.exc_info()[2]
 
-        context.update(self.context_from_lambda())
+        context.update(self.__hb__context_from_lambda())
 
         return {
             'notifier': {
@@ -80,12 +80,12 @@ class Honeybadger(object):
                 'url': "https://github.com/honeybadger-io/honeybadger-python",
                 'version': '0.1'
             },
-            'error':  self.error_payload(exception, exc_traceback),
-            'server': self.server_payload(),
+            'error':  self.__hb__error_payload(exception, exc_traceback),
+            'server': self.__hb__server_payload(),
             'request': {'context': context},
         }
 
-    def context_from_lambda(self):
+    def __hb__context_from_lambda(self):
         # check the AWS Lambda docs to see what else is in the context object
         # http://docs.aws.amazon.com/lambda/latest/dg/python-context-object.html
         # maybe you are interested in something that is inside the event dictionary?
@@ -100,7 +100,7 @@ class Honeybadger(object):
         }
         return {'lambda_context': context}
 
-    def server_payload(self):
+    def __hb__server_payload(self):
         payload = {
             'project_root': "AWS Lambda.%s" % self.lambda_context.function_name,
             'environment_name': 'lambda',
@@ -112,11 +112,16 @@ class Honeybadger(object):
 
         return payload
 
-    def error_payload(self, exception, exc_traceback):
+    def __hb__error_payload(self, exception, exc_traceback):
+        def is_not_honeybadger_frame(frame):
+            not_caller = '__hb__' not in frame[2]
+            not_calling = '__hb__' not in frame[3]
+            return not_caller and not_calling
+
         if exc_traceback:
             tb = traceback.extract_tb(exc_traceback)
         else:
-            tb = [f for f in traceback.extract_stack()]
+            tb = [f for f in traceback.extract_stack() if is_not_honeybadger_frame(f)]
 
         payload = {
             'class': type(exception) is dict and exception['error_class'] or exception.__class__.__name__,
@@ -136,7 +141,7 @@ class Honeybadger(object):
 
         return payload
 
-    def send_notice(self, payload):
+    def __hb__send_notice(self, payload):
         endpoint = 'https://api.honeybadger.io'
         api_url = "{}/v1/notices/".format(endpoint)
         request_object = request.Request(url=api_url, data=b(json.dumps(payload, cls=Honeybadger.StringReprJSONEncoder)))
